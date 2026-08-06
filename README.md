@@ -7,15 +7,32 @@ and logs every detection to a CSV.
 
 ## Setup
 
+Local use (recommended — this tool runs against your own image/video library,
+so you normally run it on your own machine):
+
 ```bash
+python3 -m venv .venv
+source .venv/bin/activate      # Windows: .venv\Scripts\activate
 ./setup.sh
 ```
 
-This installs CPU-only PyTorch, the `PytorchWildlife` stack (see
-`requirements.txt`), and pre-downloads the MegaDetector v6 (`MDV6-yolov9-c`)
-weights into the local torch hub cache. It is idempotent and safe to re-run.
+`setup.sh` installs PyTorch, the `PytorchWildlife` stack (see `requirements.txt`),
+and pre-downloads the MegaDetector v6 (`MDV6-yolov9-c`) weights into the torch
+hub cache. It is idempotent and safe to re-run, and it adapts to where it runs:
 
-In a Cursor Cloud Agent this runs automatically via `.cursor/environment.json`.
+- If a virtualenv is active, it installs into that venv; otherwise it installs
+  into your Python user site (used on the Cursor Cloud Agent VM).
+- If `torch` is already installed it is left untouched. Otherwise it installs
+  **CPU-only** wheels by default. For an NVIDIA GPU (much faster on large
+  batches), install a CUDA build first or point setup at a CUDA index:
+
+  ```bash
+  TORCH_INDEX_URL=https://download.pytorch.org/whl/cu124 ./setup.sh
+  ```
+
+In a Cursor Cloud Agent, `setup.sh` runs automatically via
+`.cursor/environment.json` (handy for working on the code, though you'll usually
+run detection locally to avoid uploading thousands of files).
 
 ## Usage
 
