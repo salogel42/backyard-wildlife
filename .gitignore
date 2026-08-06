@@ -7,3 +7,6 @@ venv/
 
 # Local wildlife archive (data lives outside the repo)
 BackyardWildlifeArchive/
+
+# Mac
+.DS_Store
