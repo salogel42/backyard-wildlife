@@ -51,6 +51,12 @@ DETECTION_CONF_THRESHOLD = float(os.environ.get("WILDLIFE_CONF_THRESHOLD", "0.1"
 # because it does not recur in the same box across many frames.
 RDE_ENABLED = os.environ.get("WILDLIFE_RDE", "1") != "0"
 RDE_MIN_REPEATS = int(os.environ.get("WILDLIFE_RDE_MIN_REPEATS", "10"))
+# Safety net for animals that use a spot which also produces false positives
+# (e.g. a squirrel on the same oak trunk that gets flagged as background). A
+# detection at or above this confidence is never removed by RDE, so a strong
+# detection is kept for review even if it sits on a recurring background box.
+# The static tree boxes here top out well below this, so they still get filtered.
+RDE_KEEP_CONF = float(os.environ.get("WILDLIFE_RDE_KEEP_CONF", "0.7"))
 # How much two boxes must overlap to count as "the same location". Tuned so it
 # absorbs the frame-to-frame wobble of a static object's box (the detector emits
 # slightly different boxes for the same branch as light changes) while staying
@@ -334,6 +340,8 @@ for camera_name in subfolders:
             for i in range(len(detections)):
                 if int(detections.class_id[i]) != ANIMAL_CLASS_ID:
                     continue
+                if float(detections.confidence[i]) >= RDE_KEEP_CONF:
+                    continue  # trust strong detections (e.g. a squirrel on the oak)
                 if any(_iou(loc, norm[i]) >= RDE_IOU_THRESHOLD for loc in static_locations):
                     mask[i] = False
             kept = detections[mask]

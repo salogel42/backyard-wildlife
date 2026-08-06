@@ -71,6 +71,7 @@ environment variables (no code edit needed):
 | `RDE_ENABLED` | `WILDLIFE_RDE` | `1` | Repeat-detection elimination on/off (`0` disables). |
 | `RDE_MIN_REPEATS` | `WILDLIFE_RDE_MIN_REPEATS` | `10` | A box location must recur in this many photos from a camera to count as background. |
 | `RDE_IOU_THRESHOLD` | `WILDLIFE_RDE_IOU` | `0.6` | How overlapping two boxes must be to be "the same location". |
+| `RDE_KEEP_CONF` | `WILDLIFE_RDE_KEEP_CONF` | `0.7` | Detections at/above this confidence are never removed by RDE (protects a real animal that uses a false-positive-prone spot). |
 
 ### False positives on fixed scenery (repeat-detection elimination)
 
@@ -85,8 +86,17 @@ A real animal that merely passes through that spot once is kept, because it does
 not recur in the same box across many frames.
 
 RDE needs a batch of photos from the same camera to learn what's static, so run
-it over a chunk of images at once rather than one at a time. If it ever hides a
-real animal, disable it (`WILDLIFE_RDE=0`) or raise `RDE_MIN_REPEATS`.
+it over a chunk of images at once rather than one at a time. It is
+non-destructive: filtered files are *moved* to `output/false_positives/` and
+logged, never deleted, so you can always review them.
+
+Animals sometimes use the very spot that produces false positives (e.g. a
+squirrel on the same oak trunk). Two things protect them: RDE only removes a box
+that closely matches the recurring one (`RDE_IOU_THRESHOLD`), so a smaller
+animal box usually survives; and any detection at/above `RDE_KEEP_CONF` (default
+`0.7`) is kept regardless. Videos are never run through RDE. If it ever hides a
+real animal, lower `RDE_KEEP_CONF`, raise `RDE_MIN_REPEATS`, or disable it with
+`WILDLIFE_RDE=0`.
 
 To sanity-check tuning on your own images without moving anything, copy a
 representative batch into a scratch camera folder and compare runs, e.g.:
