@@ -188,18 +188,32 @@ def _iou(a, b):
     return inter / union if union > 0 else 0.0
 
 
+# Cap on representative boxes kept per cluster, so single-linkage clustering
+# stays bounded (O(files * clusters * MAX_CLUSTER_REPS)) on large batches.
+MAX_CLUSTER_REPS = 32
+
+
 def find_static_locations(photo_items):
     """Cluster animal boxes across a camera's photos and return the box
     locations that recur in at least RDE_MIN_REPEATS distinct photos.
 
+    Uses single-linkage clustering: a box joins a cluster if it overlaps ANY of
+    the cluster's representative boxes (not just the first one). This matters
+    because the detector emits slightly different box extents for the same static
+    object across frames; single-rep clustering fragments those variants into
+    several small clusters that each miss the repeat threshold, whereas
+    single-linkage chains them into one cluster that recurs often enough to be
+    recognized as background.
+
     photo_items: list of dicts with keys 'detections' (sv.Detections) and
     'normalized_coords' (list aligned with detections).
-    Returns a list of representative [x1, y1, x2, y2] normalized boxes.
+    Returns a flat list of representative [x1, y1, x2, y2] normalized boxes from
+    every cluster deemed static (pass 2 filters a detection if it overlaps any).
     """
     if not RDE_ENABLED:
         return []
 
-    clusters = []  # each: {"rep": box, "files": set()}
+    clusters = []  # each: {"reps": [box, ...], "files": set()}
     for idx, item in enumerate(photo_items):
         detections = item["detections"]
         norm = item["normalized_coords"]
@@ -208,24 +222,39 @@ def find_static_locations(photo_items):
         for i, box in enumerate(norm):
             if int(detections.class_id[i]) != ANIMAL_CLASS_ID:
                 continue
-            placed = False
-            for cluster in clusters:
-                if _iou(cluster["rep"], box) >= RDE_IOU_THRESHOLD:
-                    cluster["files"].add(idx)
-                    placed = True
-                    break
-            if not placed:
-                clusters.append({"rep": list(box), "files": {idx}})
+            box = list(box)
+            hits = [c for c in clusters if any(_iou(r, box) >= RDE_IOU_THRESHOLD for r in c["reps"])]
+            if hits:
+                base = hits[0]
+                for other in hits[1:]:  # a box can bridge several clusters -> merge
+                    base["files"] |= other["files"]
+                    base["reps"] += other["reps"]
+                    clusters.remove(other)
+                base["files"].add(idx)
+                # Keep a novel box as a new representative, bounded in count.
+                if len(base["reps"]) < MAX_CLUSTER_REPS and all(_iou(r, box) < 0.95 for r in base["reps"]):
+                    base["reps"].append(box)
+                base["reps"] = base["reps"][:MAX_CLUSTER_REPS]
+            else:
+                clusters.append({"reps": [box], "files": {idx}})
 
-    return [c["rep"] for c in clusters if len(c["files"]) >= RDE_MIN_REPEATS]
+    static = []
+    for c in clusters:
+        if len(c["files"]) >= RDE_MIN_REPEATS:
+            static.extend(c["reps"])
+    return static
 
 
-def unique_dest_name(base_slug):
-    """Return a destination base name unique across all archive tiers."""
+def unique_dest_name(base_slug, ext):
+    """Return a destination base name whose file (base + ext) does not already
+    exist in any archive tier, so two captures that share a timestamp can't
+    overwrite each other. The extension must be included in the check because
+    that is how the files are actually stored.
+    """
     counter = 1
     final = base_slug
     while any(
-        os.path.exists(os.path.join(d, final))
+        os.path.exists(os.path.join(d, final + ext))
         for d in (HIGH_CONF_DIR, MED_CONF_DIR, LOW_CONF_DIR, EMPTIES_DIR, FALSE_POS_DIR)
     ):
         final = f"{base_slug}_{counter}"
@@ -317,7 +346,7 @@ for camera_name in subfolders:
         conf_prefix = f"conf{conf_int:03d}"
         time_slug = dt_obj.strftime("%Y-%m-%d_%H-%M-%S-%f")
         base_slug = f"{conf_prefix}_{camera_name}_{time_slug}"
-        final_dest_name = unique_dest_name(base_slug)
+        final_dest_name = unique_dest_name(base_slug, item["ext"])
         new_filename = f"{final_dest_name}{item['ext']}"
 
         # Route into final archive based on tiered confidence.
@@ -384,7 +413,7 @@ for camera_name in subfolders:
         conf_prefix = f"conf{conf_int:03d}"
         time_slug = dt_obj.strftime("%Y-%m-%d_%H-%M-%S-%f")
         base_slug = f"{conf_prefix}_{camera_name}_{time_slug}"
-        final_dest_name = unique_dest_name(base_slug)
+        final_dest_name = unique_dest_name(base_slug, item["ext"])
         new_filename = f"{final_dest_name}{item['ext']}"
 
         if max_conf >= 0.7:
