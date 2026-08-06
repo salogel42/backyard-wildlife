@@ -1,0 +1,9 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Local wildlife archive (data lives outside the repo)
+BackyardWildlifeArchive/
