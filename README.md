@@ -50,6 +50,27 @@ run the processor:
 python3 process_wildlife.py
 ```
 
+### Batches (important if the camera can move)
+
+Repeat-detection elimination assumes the camera didn't move within the set of
+photos it analyzes. If swapping the SD card can nudge the camera, process one
+card offload at a time so the background stays fixed. Two ways to keep batches
+separate:
+
+- Simple: drop one offload into `cam1/`, run, then repeat for the next offload.
+- Explicit: give each offload its own subfolder and they're processed as
+  independent batches in a single run (each with its own RDE):
+
+  ```
+  incoming/
+    cam1/
+      2026-08-05/   <- one SD-card offload (camera fixed)
+      2026-08-12/   <- next offload (camera may have shifted)
+  ```
+
+  A camera folder with no subfolders is treated as one batch (the simple case).
+  Archived files and the CSV `camera` column are labeled `cam1_2026-08-05`, etc.
+
 For each file the processor:
 
 - runs MegaDetector v6 (on video it samples ~1 frame/second),

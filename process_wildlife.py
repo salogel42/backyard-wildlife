@@ -280,26 +280,25 @@ if not subfolders:
 
 print(f"Found camera staging folders: {subfolders}")
 
-for camera_name in subfolders:
-    cam_folder_path = os.path.join(INCOMING_DIR, camera_name)
-    files = sorted(os.listdir(cam_folder_path))
-
-    if not files:
-        print(f"Skipping {camera_name} (empty folder).")
-        continue
-
-    print(f"\n--- Processing {camera_name} ({len(files)} items) ---")
+def process_batch(label, folder_path, filenames):
+    """Process one fixed-camera batch: detect all files, run RDE within the
+    batch, then route/move. A "batch" is files captured while the camera did not
+    move (typically one SD-card offload). RDE and any static-scene model are
+    scoped to a single batch because swapping the card can nudge the camera,
+    which shifts the background and would otherwise break the clustering.
+    """
+    print(f"\n--- Processing batch {label} ({len(filenames)} items) ---")
 
     # Pass 1: run detection on every file. For photos we store only lightweight
     # detection metadata (no images) so this scales to thousands of files.
     photo_items = []
     video_items = []
-    for filename in files:
+    for filename in filenames:
         ext = os.path.splitext(filename)[1].lower()
         if ext not in photo_extensions and ext not in video_extensions:
             continue
 
-        src_path = os.path.join(cam_folder_path, filename)
+        src_path = os.path.join(folder_path, filename)
         dt_obj, timestamp_str = get_file_timestamp(src_path)
 
         if ext in photo_extensions:
@@ -353,7 +352,7 @@ for camera_name in subfolders:
         conf_int = int(round(max_conf, 2) * 100)
         conf_prefix = f"conf{conf_int:03d}"
         time_slug = dt_obj.strftime("%Y-%m-%d_%H-%M-%S-%f")
-        base_slug = f"{conf_prefix}_{camera_name}_{time_slug}"
+        base_slug = f"{conf_prefix}_{label}_{time_slug}"
         final_dest_name = unique_dest_name(base_slug, item["ext"])
         new_filename = f"{final_dest_name}{item['ext']}"
 
@@ -394,7 +393,7 @@ for camera_name in subfolders:
 
         current_result = {
             "timestamp": timestamp_str,
-            "camera": camera_name,
+            "camera": label,
             "original_filename": filename,
             "archived_filename": new_filename,
             "annotated_filename": annotated_image_path,
@@ -420,7 +419,7 @@ for camera_name in subfolders:
         conf_int = int(round(max_conf, 2) * 100)
         conf_prefix = f"conf{conf_int:03d}"
         time_slug = dt_obj.strftime("%Y-%m-%d_%H-%M-%S-%f")
-        base_slug = f"{conf_prefix}_{camera_name}_{time_slug}"
+        base_slug = f"{conf_prefix}_{label}_{time_slug}"
         final_dest_name = unique_dest_name(base_slug, item["ext"])
         new_filename = f"{final_dest_name}{item['ext']}"
 
@@ -450,7 +449,7 @@ for camera_name in subfolders:
 
         current_result = {
             "timestamp": timestamp_str,
-            "camera": camera_name,
+            "camera": label,
             "original_filename": filename,
             "archived_filename": new_filename,
             "annotated_filename": annotated_image_path,
@@ -461,6 +460,36 @@ for camera_name in subfolders:
 
         if max_conf > 0:
             results_data.append(current_result)
+
+# Discover batches per camera and process each independently. A camera folder
+# with subfolders treats each subfolder as its own fixed-camera batch (e.g. one
+# SD-card offload); otherwise the whole folder is a single batch. This keeps RDE
+# scoped to a period where the camera did not move.
+for camera_name in subfolders:
+    cam_folder_path = os.path.join(INCOMING_DIR, camera_name)
+    subdirs = sorted(
+        d for d in os.listdir(cam_folder_path)
+        if os.path.isdir(os.path.join(cam_folder_path, d))
+    )
+    loose_files = sorted(
+        f for f in os.listdir(cam_folder_path)
+        if os.path.isfile(os.path.join(cam_folder_path, f))
+    )
+
+    if subdirs:
+        for batch in subdirs:
+            batch_path = os.path.join(cam_folder_path, batch)
+            batch_files = sorted(os.listdir(batch_path))
+            if batch_files:
+                process_batch(f"{camera_name}_{batch}", batch_path, batch_files)
+            else:
+                print(f"Skipping {camera_name}/{batch} (empty folder).")
+        if loose_files:  # any files dropped directly in the camera folder
+            process_batch(camera_name, cam_folder_path, loose_files)
+    elif loose_files:
+        process_batch(camera_name, cam_folder_path, loose_files)
+    else:
+        print(f"Skipping {camera_name} (empty folder).")
 
 # Save results to CSV log
 csv_path = os.path.join(BASE_ARCHIVE_DIR, OUTPUT_CSV)
