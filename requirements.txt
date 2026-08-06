@@ -1,0 +1,16 @@
+# Backyard Wildlife dependencies
+#
+# NOTE: PyTorch (torch/torchvision/torchaudio) is installed separately from the
+# CPU wheel index in setup.sh so the Cloud Agent VM does not pull ~1GB of CUDA
+# libraries it cannot use. Do not add torch here.
+
+# Core detector. Pins supervision==0.23.0, which provides the sv.BoxAnnotator /
+# sv.LabelAnnotator API used by process_wildlife.py, and pulls in ultralytics
+# (which provides cv2 via opencv-python).
+PytorchWildlife==1.3.0
+
+# Undeclared transitive deps: PytorchWildlife 1.3.0 eagerly imports its
+# bioacoustics submodule (via PytorchWildlife.models -> PytorchWildlife.data),
+# which requires these audio libraries even though we only use image detection.
+soundfile
+librosa
